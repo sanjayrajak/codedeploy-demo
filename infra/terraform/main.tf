@@ -25,6 +25,12 @@ data "aws_subnets" "selected" {
     name   = "vpc-id"
     values = [data.aws_vpc.selected.id]
   }
+
+  # us-east-1e does not support t3.micro — exclude it
+  filter {
+    name   = "availabilityZone"
+    values = ["us-east-1a", "us-east-1b", "us-east-1c", "us-east-1d", "us-east-1f"]
+  }
 }
 
 locals {
@@ -241,7 +247,7 @@ resource "aws_iam_role_policy" "github_actions" {
 # ---------------------------------------------------------------
 resource "aws_security_group" "api_servers" {
   name        = "${var.app_name}-sg"
-  description = "Sandbox API servers — ${var.app_name}"
+  description = "Sandbox API servers - ${var.app_name}"
   vpc_id      = data.aws_vpc.selected.id
 
   ingress {
