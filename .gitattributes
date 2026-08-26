@@ -1,0 +1,19 @@
+# Force LF for all shell scripts and Linux config files so they
+# arrive on EC2 with correct line endings regardless of dev OS.
+*.sh        text eol=lf
+*.service   text eol=lf
+appspec.yml text eol=lf
+Makefile    text eol=lf
+
+# Standard text/binary hints
+*.cs        text
+*.csproj    text
+*.json      text
+*.yml       text
+*.md        text
+*.tf        text
+*.tfvars    text
+
+*.png       binary
+*.jpg       binary
+*.zip       binary

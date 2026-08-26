@@ -1,0 +1,41 @@
+version: 0.0
+os: linux
+
+files:
+  - source: /publish
+    destination: /opt/helloapi
+
+permissions:
+  - object: /opt/helloapi
+    owner: kestrel
+    group: kestrel
+    mode: "755"
+    type:
+      - directory
+      - file
+
+hooks:
+  ApplicationStop:
+    - location: hooks/stop_service.sh
+      timeout: 30
+      runas: root
+
+  BeforeInstall:
+    - location: hooks/clean_old_files.sh
+      timeout: 30
+      runas: root
+
+  AfterInstall:
+    - location: hooks/set_permissions.sh
+      timeout: 30
+      runas: root
+
+  ApplicationStart:
+    - location: hooks/start_service.sh
+      timeout: 60
+      runas: root
+
+  ValidateService:
+    - location: hooks/validate_health.sh
+      timeout: 60
+      runas: root

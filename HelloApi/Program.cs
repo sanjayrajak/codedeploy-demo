@@ -14,6 +14,15 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// Health check — called by CodeDeploy validate_health.sh hook.
+// Returns 200 OK when the service is ready; CodeDeploy rolls back if it doesn't.
+app.MapGet("/health", () => Results.Ok(new
+{
+    status  = "healthy",
+    version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown",
+    utc     = DateTime.UtcNow
+})).WithName("GetHealth");
+
 // Simple hello endpoints
 app.MapGet("/hello", () => new { message = "Hello, World!" })
     .WithName("GetHello");

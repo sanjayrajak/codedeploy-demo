@@ -1,0 +1,136 @@
+name: Deploy to Sandbox
+
+# Triggered manually only — keeps this completely separate from any prod workflow.
+# Run it from: Actions → Deploy to Sandbox → Run workflow
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment (should always be sandbox for this workflow)"
+        required: false
+        default: "sandbox"
+
+permissions:
+  id-token: write   # required for OIDC
+  contents: read
+
+env:
+  DOTNET_VERSION: "8.0.x"
+  PROJECT_PATH: "./HelloApi/HelloApi.csproj"
+  PUBLISH_OUTPUT: "./publish"
+  ARTIFACT_KEY: "sandbox-api-deploy/HelloApi-${{ github.sha }}.zip"
+
+jobs:
+  build-and-deploy:
+    name: Build, upload, and deploy to sandbox
+    runs-on: ubuntu-latest
+
+    steps:
+      # -------------------------------------------------------
+      # 1. Checkout
+      # -------------------------------------------------------
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # -------------------------------------------------------
+      # 2. Set up .NET
+      # -------------------------------------------------------
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # -------------------------------------------------------
+      # 3. Restore and publish
+      # -------------------------------------------------------
+      - name: Restore dependencies
+        run: dotnet restore ${{ env.PROJECT_PATH }}
+
+      - name: Run tests
+        run: dotnet test --no-restore --verbosity normal || true
+        # "|| true" so missing test projects don't fail the build;
+        # remove once you have a real test project.
+
+      - name: Publish
+        run: |
+          dotnet publish ${{ env.PROJECT_PATH }} \
+            --configuration Release \
+            --output ${{ env.PUBLISH_OUTPUT }} \
+            --no-restore
+
+      # -------------------------------------------------------
+      # 4. Bundle: published app + appspec + hooks
+      # -------------------------------------------------------
+      - name: Bundle deployment package
+        run: |
+          # appspec.yml must be at the root of the zip
+          cp infra/codedeploy/appspec.yml appspec.yml
+          cp -r infra/codedeploy/hooks hooks
+
+          zip -r artifact.zip \
+            appspec.yml \
+            hooks/ \
+            publish/
+
+          echo "Artifact size: $(du -sh artifact.zip | cut -f1)"
+
+      # -------------------------------------------------------
+      # 5. Assume IAM role via OIDC — no long-lived keys
+      # -------------------------------------------------------
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.SANDBOX_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.SANDBOX_AWS_REGION }}
+          role-session-name: "github-actions-sandbox-${{ github.run_id }}"
+
+      # -------------------------------------------------------
+      # 6. Upload artifact to S3
+      # -------------------------------------------------------
+      - name: Upload artifact to S3
+        run: |
+          aws s3 cp artifact.zip "s3://${{ vars.SANDBOX_ARTIFACT_BUCKET }}/${{ env.ARTIFACT_KEY }}"
+          echo "Uploaded to s3://${{ vars.SANDBOX_ARTIFACT_BUCKET }}/${{ env.ARTIFACT_KEY }}"
+
+      # -------------------------------------------------------
+      # 7. Register revision with CodeDeploy
+      # -------------------------------------------------------
+      - name: Register S3 revision with CodeDeploy
+        run: |
+          aws deploy register-application-revision \
+            --application-name "${{ vars.SANDBOX_CODEDEPLOY_APP }}" \
+            --s3-location bucket=${{ vars.SANDBOX_ARTIFACT_BUCKET }},key=${{ env.ARTIFACT_KEY }},bundleType=zip
+
+      # -------------------------------------------------------
+      # 8. Create deployment and wait for result
+      # -------------------------------------------------------
+      - name: Create CodeDeploy deployment
+        id: create_deployment
+        run: |
+          DEPLOYMENT_ID=$(aws deploy create-deployment \
+            --application-name "${{ vars.SANDBOX_CODEDEPLOY_APP }}" \
+            --deployment-group-name "${{ vars.SANDBOX_CODEDEPLOY_DG }}" \
+            --deployment-config-name "CodeDeployDefault.HalfAtATime" \
+            --s3-location bucket=${{ vars.SANDBOX_ARTIFACT_BUCKET }},key=${{ env.ARTIFACT_KEY }},bundleType=zip \
+            --description "GitHub Actions sandbox deploy — sha ${{ github.sha }}" \
+            --query "deploymentId" \
+            --output text)
+
+          echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
+          echo "CodeDeploy deployment ID: $DEPLOYMENT_ID"
+
+      - name: Wait for deployment to complete
+        run: |
+          DEPLOYMENT_ID="${{ steps.create_deployment.outputs.deployment_id }}"
+          echo "Waiting for deployment $DEPLOYMENT_ID..."
+
+          aws deploy wait deployment-successful \
+            --deployment-id "$DEPLOYMENT_ID"
+
+          # Print final status
+          aws deploy get-deployment \
+            --deployment-id "$DEPLOYMENT_ID" \
+            --query "deploymentInfo.{Status:status,Completed:completeTime,Instances:deploymentOverview}" \
+            --output table
+
+          echo "Deployment $DEPLOYMENT_ID succeeded."

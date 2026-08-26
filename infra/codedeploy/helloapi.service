@@ -1,0 +1,42 @@
+# Example systemd unit file for the Kestrel API service.
+# This is baked into user_data.sh on first boot.
+# You can also copy it manually: sudo cp helloapi.service /etc/systemd/system/
+# Then: sudo systemctl daemon-reload && sudo systemctl enable --now helloapi
+
+[Unit]
+Description=HelloApi .NET Kestrel Service (sandbox)
+After=network.target
+Wants=network.target
+
+[Service]
+User=kestrel
+Group=kestrel
+WorkingDirectory=/opt/helloapi
+
+# dotnet binary from Amazon Linux 2023 dnf install dotnet-runtime-8.0
+ExecStart=/usr/bin/dotnet /opt/helloapi/HelloApi.dll
+
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Environment
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://0.0.0.0:5000
+# Add any other env vars your app needs:
+# Environment=ConnectionStrings__Default=...
+
+# Logging (journald captures stdout/stderr)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helloapi
+
+# Basic hardening
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -14,6 +14,13 @@ obj/
 [Rr]elease/
 artifacts/
 
+# Terraform state and local variable overrides — never commit these
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+infra/terraform/terraform.tfvars   # contains AWS account ID
+
 # OS files
 .DS_Store
 Thumbs.db
