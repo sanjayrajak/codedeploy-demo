@@ -198,8 +198,8 @@ resource "aws_iam_role" "github_actions" {
         }
         StringLike = {
           # Allow any ref/trigger type from this specific repo
-          # workflow_dispatch can send different sub formats — wildcard covers all
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}/${var.github_repo}:*"
+          # GitHub includes numeric user/repo IDs in the sub claim: owner@uid/repo@rid:*
+          "token.actions.githubusercontent.com:sub" = "repo:sanjayrajak*codedeploy-demo*:*"
         }
       }
     }]
