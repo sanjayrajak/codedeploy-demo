@@ -99,18 +99,8 @@ jobs:
           aws s3 cp artifact.zip s3://${BUCKET}/${KEY}
 
       # -------------------------------------------------------
-      # 7. Register revision with CodeDeploy
-      # -------------------------------------------------------
-      - name: Register S3 revision with CodeDeploy
-        run: |
-          BUCKET=${{ vars.SANDBOX_ARTIFACT_BUCKET }}
-          KEY=${{ steps.set_key.outputs.artifact_key }}
-          aws deploy register-application-revision \
-            --application-name ${{ vars.SANDBOX_CODEDEPLOY_APP }} \
-            --revision revisionType=S3,s3Location={bucket=${BUCKET},key=${KEY},bundleType=zip}
-
-      # -------------------------------------------------------
-      # 8. Create deployment and wait for result
+      # 7. Create deployment and wait for result
+      # (create-deployment registers the revision automatically)
       # -------------------------------------------------------
       - name: Create CodeDeploy deployment
         id: create_deployment
