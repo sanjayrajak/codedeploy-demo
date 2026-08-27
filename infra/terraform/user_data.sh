@@ -3,11 +3,9 @@ set -euxo pipefail
 
 # ---------------------------------------------------------------
 # User data — runs once on first boot for Amazon Linux 2023
-# Installs: .NET 8 runtime, CodeDeploy agent
+# ${region} and ${app_name} are Terraform templatefile variables.
+# All other bash variables use $VAR (no braces) to avoid conflict.
 # ---------------------------------------------------------------
-
-REGION="${region}"
-APP_NAME="${app_name}"
 
 # System update
 dnf update -y
@@ -25,7 +23,7 @@ dnf install -y dotnet-runtime-8.0
 dnf install -y ruby wget
 
 cd /tmp
-wget -q "https://aws-codedeploy-${REGION}.s3.${REGION}.amazonaws.com/latest/codedeploy-agent.noarch.rpm"
+wget -q "https://aws-codedeploy-${region}.s3.${region}.amazonaws.com/latest/codedeploy-agent.noarch.rpm"
 dnf install -y ./codedeploy-agent.noarch.rpm
 
 # The rpm installs a SysV init script — use service to start it
@@ -42,9 +40,9 @@ chown kestrel:kestrel /opt/helloapi
 # Install the systemd unit for the Kestrel app
 # (will be started on first CodeDeploy deployment)
 # ---------------------------------------------------------------
-cat > /etc/systemd/system/helloapi.service << 'EOF'
+cat > /etc/systemd/system/helloapi.service << 'UNIT'
 [Unit]
-Description=HelloApi .NET Kestrel Service
+Description=HelloApi .NET Kestrel Service (${app_name})
 After=network.target
 
 [Service]
@@ -62,8 +60,8 @@ ProtectSystem=full
 
 [Install]
 WantedBy=multi-user.target
-EOF
+UNIT
 
 systemctl daemon-reload
 
-echo "Bootstrap complete for $APP_NAME"
+echo "Bootstrap complete for ${app_name}"

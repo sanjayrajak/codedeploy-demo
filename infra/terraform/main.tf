@@ -197,8 +197,9 @@ resource "aws_iam_role" "github_actions" {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
         }
         StringLike = {
-          # Scoped to your specific repo + branch
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/${var.github_branch}"
+          # Allow any ref/trigger type from this specific repo
+          # workflow_dispatch can send different sub formats — wildcard covers all
+          "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}/${var.github_repo}:*"
         }
       }
     }]
