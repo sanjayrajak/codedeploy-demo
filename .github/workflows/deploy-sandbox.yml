@@ -107,7 +107,7 @@ jobs:
           KEY=${{ steps.set_key.outputs.artifact_key }}
           aws deploy register-application-revision \
             --application-name ${{ vars.SANDBOX_CODEDEPLOY_APP }} \
-            --s3-location bucket=${BUCKET},key=${KEY},bundleType=zip
+            --revision revisionType=S3,s3Location={bucket=${BUCKET},key=${KEY},bundleType=zip}
 
       # -------------------------------------------------------
       # 8. Create deployment and wait for result
