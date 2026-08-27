@@ -11,9 +11,9 @@ set -euxo pipefail
 dnf update -y
 
 # ---------------------------------------------------------------
-# Install .NET 8 runtime
+# Install .NET 8 and .NET 9 runtimes
 # ---------------------------------------------------------------
-dnf install -y dotnet-runtime-8.0
+dnf install -y dotnet-runtime-8.0 dotnet-runtime-9.0
 
 # ---------------------------------------------------------------
 # Install CodeDeploy agent for Amazon Linux 2023
