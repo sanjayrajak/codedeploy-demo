@@ -18,7 +18,6 @@ env:
   DOTNET_VERSION: "8.0.x"
   PROJECT_PATH: "./HelloApi/HelloApi.csproj"
   PUBLISH_OUTPUT: "./publish"
-  ARTIFACT_KEY: "sandbox-api-deploy/HelloApi-${{ github.sha }}.zip"
 
 jobs:
   build-and-deploy:
@@ -31,6 +30,14 @@ jobs:
       # -------------------------------------------------------
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # -------------------------------------------------------
+      # 1b. Set artifact key
+      # github.sha is not available in top-level env — set it here
+      # -------------------------------------------------------
+      - name: Set artifact key
+        id: set_key
+        run: echo "artifact_key=sandbox-api-deploy/HelloApi-${{ github.sha }}.zip" >> "$GITHUB_OUTPUT"
 
       # -------------------------------------------------------
       # 2. Set up .NET
@@ -48,8 +55,6 @@ jobs:
 
       - name: Run tests
         run: dotnet test --no-restore --verbosity normal || true
-        # "|| true" so missing test projects don't fail the build;
-        # remove once you have a real test project.
 
       - name: Publish
         run: |
@@ -63,7 +68,6 @@ jobs:
       # -------------------------------------------------------
       - name: Bundle deployment package
         run: |
-          # appspec.yml must be at the root of the zip
           cp infra/codedeploy/appspec.yml appspec.yml
           cp -r infra/codedeploy/hooks hooks
 
@@ -89,19 +93,21 @@ jobs:
       # -------------------------------------------------------
       - name: Upload artifact to S3
         run: |
-          echo "Bucket: ${{ vars.SANDBOX_ARTIFACT_BUCKET }}"
-          echo "Key: ${{ env.ARTIFACT_KEY }}"
-          aws s3 cp artifact.zip s3://${{ vars.SANDBOX_ARTIFACT_BUCKET }}/${{ env.ARTIFACT_KEY }}
-          echo "Uploaded to s3://${{ vars.SANDBOX_ARTIFACT_BUCKET }}/${{ env.ARTIFACT_KEY }}"
+          BUCKET=${{ vars.SANDBOX_ARTIFACT_BUCKET }}
+          KEY=${{ steps.set_key.outputs.artifact_key }}
+          echo "Uploading to s3://${BUCKET}/${KEY}"
+          aws s3 cp artifact.zip s3://${BUCKET}/${KEY}
 
       # -------------------------------------------------------
       # 7. Register revision with CodeDeploy
       # -------------------------------------------------------
       - name: Register S3 revision with CodeDeploy
         run: |
+          BUCKET=${{ vars.SANDBOX_ARTIFACT_BUCKET }}
+          KEY=${{ steps.set_key.outputs.artifact_key }}
           aws deploy register-application-revision \
-            --application-name "${{ vars.SANDBOX_CODEDEPLOY_APP }}" \
-            --s3-location bucket=${{ vars.SANDBOX_ARTIFACT_BUCKET }},key=${{ env.ARTIFACT_KEY }},bundleType=zip
+            --application-name ${{ vars.SANDBOX_CODEDEPLOY_APP }} \
+            --s3-location bucket=${BUCKET},key=${KEY},bundleType=zip
 
       # -------------------------------------------------------
       # 8. Create deployment and wait for result
@@ -109,13 +115,15 @@ jobs:
       - name: Create CodeDeploy deployment
         id: create_deployment
         run: |
+          BUCKET=${{ vars.SANDBOX_ARTIFACT_BUCKET }}
+          KEY=${{ steps.set_key.outputs.artifact_key }}
           DEPLOYMENT_ID=$(aws deploy create-deployment \
-            --application-name "${{ vars.SANDBOX_CODEDEPLOY_APP }}" \
-            --deployment-group-name "${{ vars.SANDBOX_CODEDEPLOY_DG }}" \
-            --deployment-config-name "CodeDeployDefault.HalfAtATime" \
-            --s3-location bucket=${{ vars.SANDBOX_ARTIFACT_BUCKET }},key=${{ env.ARTIFACT_KEY }},bundleType=zip \
-            --description "GitHub Actions sandbox deploy — sha ${{ github.sha }}" \
-            --query "deploymentId" \
+            --application-name ${{ vars.SANDBOX_CODEDEPLOY_APP }} \
+            --deployment-group-name ${{ vars.SANDBOX_CODEDEPLOY_DG }} \
+            --deployment-config-name CodeDeployDefault.HalfAtATime \
+            --s3-location bucket=${BUCKET},key=${KEY},bundleType=zip \
+            --description "GitHub Actions sandbox deploy sha ${{ github.sha }}" \
+            --query deploymentId \
             --output text)
 
           echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
@@ -129,7 +137,6 @@ jobs:
           aws deploy wait deployment-successful \
             --deployment-id "$DEPLOYMENT_ID"
 
-          # Print final status
           aws deploy get-deployment \
             --deployment-id "$DEPLOYMENT_ID" \
             --query "deploymentInfo.{Status:status,Completed:completeTime,Instances:deploymentOverview}" \
