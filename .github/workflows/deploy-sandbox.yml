@@ -89,7 +89,9 @@ jobs:
       # -------------------------------------------------------
       - name: Upload artifact to S3
         run: |
-          aws s3 cp artifact.zip "s3://${{ vars.SANDBOX_ARTIFACT_BUCKET }}/${{ env.ARTIFACT_KEY }}"
+          echo "Bucket: ${{ vars.SANDBOX_ARTIFACT_BUCKET }}"
+          echo "Key: ${{ env.ARTIFACT_KEY }}"
+          aws s3 cp artifact.zip s3://${{ vars.SANDBOX_ARTIFACT_BUCKET }}/${{ env.ARTIFACT_KEY }}
           echo "Uploaded to s3://${{ vars.SANDBOX_ARTIFACT_BUCKET }}/${{ env.ARTIFACT_KEY }}"
 
       # -------------------------------------------------------
