@@ -243,7 +243,37 @@ resource "aws_iam_role_policy" "github_actions" {
 }
 
 # ---------------------------------------------------------------
+# Security group for ALB — accepts HTTP from the internet
+# ---------------------------------------------------------------
+resource "aws_security_group" "alb" {
+  name        = "${var.app_name}-alb-sg"
+  description = "Sandbox ALB - ${var.app_name}"
+  vpc_id      = data.aws_vpc.selected.id
+
+  ingress {
+    description = "HTTP from internet"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Environment = "sandbox"
+    Project     = var.app_name
+  }
+}
+
+# ---------------------------------------------------------------
 # Security group for EC2 instances
+# Only accepts Kestrel traffic from the ALB SG (not the open internet)
 # ---------------------------------------------------------------
 resource "aws_security_group" "api_servers" {
   name        = "${var.app_name}-sg"
@@ -259,19 +289,11 @@ resource "aws_security_group" "api_servers" {
   }
 
   ingress {
-    description = "Kestrel HTTP"
-    from_port   = 5000
-    to_port     = 5000
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "Kestrel HTTPS"
-    from_port   = 5001
-    to_port     = 5001
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    description     = "Kestrel HTTP from ALB only"
+    from_port       = 5000
+    to_port         = 5000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
   }
 
   egress {
@@ -345,7 +367,74 @@ resource "aws_codedeploy_deployment_group" "api" {
   }
 
   deployment_style {
-    deployment_option = "WITHOUT_TRAFFIC_CONTROL"
+    deployment_option = "WITH_TRAFFIC_CONTROL"
     deployment_type   = "IN_PLACE"
+  }
+
+  load_balancer_info {
+    target_group_info {
+      name = aws_lb_target_group.api.name
+    }
+  }
+}
+
+# ---------------------------------------------------------------
+# Application Load Balancer
+# ---------------------------------------------------------------
+resource "aws_lb" "api" {
+  name               = "${var.app_name}-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = local.subnet_ids
+
+  tags = {
+    Environment = "sandbox"
+    Project     = var.app_name
+  }
+}
+
+# Target group — points to EC2 instances on Kestrel port 5000
+resource "aws_lb_target_group" "api" {
+  name        = "${var.app_name}-tg"
+  port        = 5000
+  protocol    = "HTTP"
+  vpc_id      = data.aws_vpc.selected.id
+  target_type = "instance"
+
+  health_check {
+    path                = "/health"
+    port                = "5000"
+    protocol            = "HTTP"
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    timeout             = 5
+    interval            = 15
+    matcher             = "200"
+  }
+
+  tags = {
+    Environment = "sandbox"
+    Project     = var.app_name
+  }
+}
+
+# Register both EC2 instances in the target group
+resource "aws_lb_target_group_attachment" "api" {
+  count            = var.instance_count
+  target_group_arn = aws_lb_target_group.api.arn
+  target_id        = aws_instance.api_server[count.index].id
+  port             = 5000
+}
+
+# Listener — HTTP:80 → forward to target group
+resource "aws_lb_listener" "api" {
+  load_balancer_arn = aws_lb.api.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.api.arn
   }
 }

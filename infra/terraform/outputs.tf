@@ -19,6 +19,11 @@ output "codedeploy_deployment_group" {
 }
 
 output "instance_public_ips" {
-  description = "Public IPs of sandbox EC2 instances"
+  description = "Public IPs of sandbox EC2 instances (direct access)"
   value       = aws_instance.api_server[*].public_ip
+}
+
+output "alb_dns_name" {
+  description = "ALB DNS name — use this URL to access the API"
+  value       = "http://${aws_lb.api.dns_name}"
 }
