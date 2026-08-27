@@ -3,7 +3,7 @@ set -euxo pipefail
 
 # ---------------------------------------------------------------
 # User data — runs once on first boot for Amazon Linux 2023
-# Installs: .NET runtime, CodeDeploy agent
+# Installs: .NET 8 runtime, CodeDeploy agent
 # ---------------------------------------------------------------
 
 REGION="${region}"
@@ -13,22 +13,23 @@ APP_NAME="${app_name}"
 dnf update -y
 
 # ---------------------------------------------------------------
-# Install .NET 8 runtime (change version to match your app)
+# Install .NET 8 runtime
 # ---------------------------------------------------------------
 dnf install -y dotnet-runtime-8.0
 
 # ---------------------------------------------------------------
-# Install CodeDeploy agent
+# Install CodeDeploy agent for Amazon Linux 2023
+# The generic "auto" installer script doesn't support AL2023.
+# Use the direct .noarch.rpm from the regional S3 bucket.
 # ---------------------------------------------------------------
 dnf install -y ruby wget
 
 cd /tmp
-wget -q "https://aws-codedeploy-$REGION.s3.$REGION.amazonaws.com/latest/install"
-chmod +x ./install
-./install auto -v latest
+wget -q "https://aws-codedeploy-${REGION}.s3.${REGION}.amazonaws.com/latest/codedeploy-agent.noarch.rpm"
+dnf install -y ./codedeploy-agent.noarch.rpm
 
-systemctl enable codedeploy-agent
-systemctl start codedeploy-agent
+# The rpm installs a SysV init script — use service to start it
+service codedeploy-agent start
 
 # ---------------------------------------------------------------
 # Create app user and directories
@@ -38,7 +39,8 @@ mkdir -p /opt/helloapi
 chown kestrel:kestrel /opt/helloapi
 
 # ---------------------------------------------------------------
-# Create a placeholder systemd unit (overwritten on first deploy)
+# Install the systemd unit for the Kestrel app
+# (will be started on first CodeDeploy deployment)
 # ---------------------------------------------------------------
 cat > /etc/systemd/system/helloapi.service << 'EOF'
 [Unit]
@@ -54,7 +56,6 @@ RestartSec=5
 Environment=ASPNETCORE_ENVIRONMENT=Production
 Environment=ASPNETCORE_URLS=http://0.0.0.0:5000
 
-# Hardening
 PrivateTmp=true
 NoNewPrivileges=true
 ProtectSystem=full
@@ -64,6 +65,5 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-# Don't start yet — first deploy will start it
 
 echo "Bootstrap complete for $APP_NAME"
