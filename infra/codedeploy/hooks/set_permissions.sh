@@ -5,6 +5,12 @@ set -euo pipefail
 APP_DIR="/opt/helloapi"
 SERVICE_FILE="/etc/systemd/system/helloapi.service"
 
+# Ensure ASP.NET Core 9 runtime is installed (idempotent)
+if ! dotnet --list-runtimes 2>/dev/null | grep -q "Microsoft.AspNetCore.App 9"; then
+    echo "[set_permissions] Installing aspnetcore-runtime-9.0..."
+    dnf install -y aspnetcore-runtime-9.0
+fi
+
 echo "[set_permissions] Setting ownership on $APP_DIR..."
 chown -R kestrel:kestrel "$APP_DIR"
 find "$APP_DIR" -name "*.sh" -exec chmod +x {} \;

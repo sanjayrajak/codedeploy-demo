@@ -11,9 +11,10 @@ set -euxo pipefail
 dnf update -y
 
 # ---------------------------------------------------------------
-# Install .NET 8 and .NET 9 runtimes
+# Install ASP.NET Core 9 runtime (includes Microsoft.AspNetCore.App
+# and Microsoft.NETCore.App — required for Kestrel web apps)
 # ---------------------------------------------------------------
-dnf install -y dotnet-runtime-8.0 dotnet-runtime-9.0
+dnf install -y aspnetcore-runtime-9.0
 
 # ---------------------------------------------------------------
 # Install CodeDeploy agent for Amazon Linux 2023
