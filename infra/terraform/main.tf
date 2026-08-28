@@ -244,11 +244,11 @@ resource "aws_iam_role_policy" "github_actions" {
 }
 
 # ---------------------------------------------------------------
-# Security group for ALB — accepts HTTP from the internet
+# Security group for HAProxy — accepts HTTP from the internet
 # ---------------------------------------------------------------
-resource "aws_security_group" "alb" {
-  name        = "${var.app_name}-alb-sg"
-  description = "Sandbox ALB - ${var.app_name}"
+resource "aws_security_group" "haproxy" {
+  name        = "${var.app_name}-haproxy-sg"
+  description = "Sandbox HAProxy - ${var.app_name}"
   vpc_id      = data.aws_vpc.selected.id
 
   ingress {
@@ -257,6 +257,22 @@ resource "aws_security_group" "alb" {
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HAProxy stats page"
+    from_port   = 8404
+    to_port     = 8404
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.allowed_ssh_cidr]
   }
 
   egress {
@@ -273,8 +289,8 @@ resource "aws_security_group" "alb" {
 }
 
 # ---------------------------------------------------------------
-# Security group for EC2 instances
-# Only accepts Kestrel traffic from the ALB SG (not the open internet)
+# Security group for API servers
+# Only accepts Kestrel traffic from the HAProxy instance SG
 # ---------------------------------------------------------------
 resource "aws_security_group" "api_servers" {
   name        = "${var.app_name}-sg"
@@ -290,11 +306,11 @@ resource "aws_security_group" "api_servers" {
   }
 
   ingress {
-    description     = "Kestrel HTTP from ALB only"
+    description     = "Kestrel HTTP from HAProxy only"
     from_port       = 5000
     to_port         = 5000
     protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
+    security_groups = [aws_security_group.haproxy.id]
   }
 
   egress {
@@ -311,6 +327,34 @@ resource "aws_security_group" "api_servers" {
 }
 
 # ---------------------------------------------------------------
+# HAProxy instance
+# ---------------------------------------------------------------
+resource "aws_instance" "haproxy" {
+  ami                         = data.aws_ami.al2023.id
+  instance_type               = var.instance_type
+  subnet_id                   = local.subnet_ids[0]
+  iam_instance_profile        = aws_iam_instance_profile.ec2.name
+  vpc_security_group_ids      = [aws_security_group.haproxy.id]
+  associate_public_ip_address = true
+
+  user_data = base64encode(templatefile("${path.module}/user_data_haproxy.sh", {
+    app_name   = var.app_name
+    server1_ip = aws_instance.api_server[0].private_ip
+    server2_ip = aws_instance.api_server[1].private_ip
+  }))
+
+  tags = {
+    Name        = "${var.app_name}-haproxy"
+    Environment = "sandbox"
+    Project     = var.app_name
+    Role        = "haproxy"
+  }
+
+  # Re-provision HAProxy config whenever API server IPs change
+  depends_on = [aws_instance.api_server]
+}
+
+# ---------------------------------------------------------------
 # EC2 instances
 # ---------------------------------------------------------------
 resource "aws_instance" "api_server" {
@@ -322,7 +366,6 @@ resource "aws_instance" "api_server" {
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
   vpc_security_group_ids = [aws_security_group.api_servers.id]
 
-  # Required for CodeDeploy to reach the agent
   associate_public_ip_address = true
 
   user_data = base64encode(templatefile("${path.module}/user_data.sh", {
@@ -334,13 +377,13 @@ resource "aws_instance" "api_server" {
     Name        = "${var.app_name}-server-${count.index + 1}"
     Environment = "sandbox"
     Project     = var.app_name
-    # This tag is what the CodeDeploy deployment group targets
     DeployGroup = var.app_name
   }
 }
 
 # ---------------------------------------------------------------
 # CodeDeploy application + deployment group
+# No ALB/traffic control — HAProxy handles routing
 # ---------------------------------------------------------------
 resource "aws_codedeploy_app" "api" {
   name             = var.app_name
@@ -352,7 +395,7 @@ resource "aws_codedeploy_deployment_group" "api" {
   deployment_group_name  = "${var.app_name}-dg"
   service_role_arn       = aws_iam_role.codedeploy_service.arn
 
-  deployment_config_name = "CodeDeployDefault.HalfAtATime"  # rolling
+  deployment_config_name = "CodeDeployDefault.HalfAtATime"
 
   ec2_tag_set {
     ec2_tag_filter {
@@ -368,74 +411,7 @@ resource "aws_codedeploy_deployment_group" "api" {
   }
 
   deployment_style {
-    deployment_option = "WITH_TRAFFIC_CONTROL"
+    deployment_option = "WITHOUT_TRAFFIC_CONTROL"
     deployment_type   = "IN_PLACE"
-  }
-
-  load_balancer_info {
-    target_group_info {
-      name = aws_lb_target_group.api.name
-    }
-  }
-}
-
-# ---------------------------------------------------------------
-# Application Load Balancer
-# ---------------------------------------------------------------
-resource "aws_lb" "api" {
-  name               = "${var.app_name}-alb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb.id]
-  subnets            = local.subnet_ids
-
-  tags = {
-    Environment = "sandbox"
-    Project     = var.app_name
-  }
-}
-
-# Target group — points to EC2 instances on Kestrel port 5000
-resource "aws_lb_target_group" "api" {
-  name        = "${var.app_name}-tg"
-  port        = 5000
-  protocol    = "HTTP"
-  vpc_id      = data.aws_vpc.selected.id
-  target_type = "instance"
-
-  health_check {
-    path                = "/health"
-    port                = "5000"
-    protocol            = "HTTP"
-    healthy_threshold   = 2
-    unhealthy_threshold = 3
-    timeout             = 5
-    interval            = 15
-    matcher             = "200"
-  }
-
-  tags = {
-    Environment = "sandbox"
-    Project     = var.app_name
-  }
-}
-
-# Register both EC2 instances in the target group
-resource "aws_lb_target_group_attachment" "api" {
-  count            = var.instance_count
-  target_group_arn = aws_lb_target_group.api.arn
-  target_id        = aws_instance.api_server[count.index].id
-  port             = 5000
-}
-
-# Listener — HTTP:80 → forward to target group
-resource "aws_lb_listener" "api" {
-  load_balancer_arn = aws_lb.api.arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.api.arn
   }
 }

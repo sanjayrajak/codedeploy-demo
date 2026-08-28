@@ -19,11 +19,21 @@ output "codedeploy_deployment_group" {
 }
 
 output "instance_public_ips" {
-  description = "Public IPs of sandbox EC2 instances (direct access)"
+  description = "Public IPs of sandbox API EC2 instances (direct access)"
   value       = aws_instance.api_server[*].public_ip
 }
 
-output "alb_dns_name" {
-  description = "ALB DNS name — use this URL to access the API"
-  value       = "http://${aws_lb.api.dns_name}"
+output "haproxy_public_ip" {
+  description = "HAProxy public IP — use this to access the API"
+  value       = aws_instance.haproxy.public_ip
+}
+
+output "haproxy_url" {
+  description = "API base URL via HAProxy"
+  value       = "http://${aws_instance.haproxy.public_ip}"
+}
+
+output "haproxy_stats_url" {
+  description = "HAProxy stats page (admin/sandbox123)"
+  value       = "http://${aws_instance.haproxy.public_ip}:8404/stats"
 }
