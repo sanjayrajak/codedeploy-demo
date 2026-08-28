@@ -1,0 +1,10 @@
+{
+  "commands": [
+    "dnf install -y aspnetcore-runtime-9.0",
+    "dotnet --list-runtimes",
+    "systemctl restart helloapi",
+    "sleep 5",
+    "systemctl status helloapi --no-pager",
+    "curl -s http://localhost:5000/health && echo HEALTH-OK || echo HEALTH-FAILED"
+  ]
+}
