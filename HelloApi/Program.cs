@@ -24,7 +24,7 @@ app.MapGet("/health", () => Results.Ok(new
 })).WithName("GetHealth");
 
 // Simple hello endpoints
-app.MapGet("/hello", () => new { message = "Hello, World! How are you" })
+app.MapGet("/hello", () => new { message = "Hello, World! How are you Snajay" })
     .WithName("GetHello");
 
 app.MapGet("/hello/{name}", (string name) => new { message = $"Hello, {name}!" })
