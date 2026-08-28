@@ -11,6 +11,12 @@ if ! dotnet --list-runtimes 2>/dev/null | grep -q "Microsoft.AspNetCore.App 9"; 
     dnf install -y aspnetcore-runtime-9.0
 fi
 
+# Ensure socat is installed (needed for HAProxy Runtime API communication)
+if ! command -v socat &>/dev/null; then
+    echo "[set_permissions] Installing socat..."
+    dnf install -y socat
+fi
+
 echo "[set_permissions] Setting ownership on $APP_DIR..."
 chown -R kestrel:kestrel "$APP_DIR"
 find "$APP_DIR" -name "*.sh" -exec chmod +x {} \;

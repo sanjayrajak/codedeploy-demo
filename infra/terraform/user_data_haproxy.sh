@@ -26,6 +26,8 @@ global
     user        haproxy
     group       haproxy
     daemon
+    # Runtime API — allows CodeDeploy hooks to drain/restore servers without config reload
+    stats socket /run/haproxy/admin.sock mode 660 level admin expose-fd listeners
 
 #---------------------------------------------------------------------
 # Default settings
