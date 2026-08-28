@@ -72,7 +72,8 @@ frontend http_front
 #---------------------------------------------------------------------
 backend api_servers
     balance     roundrobin
-    option      httpchk GET /health HTTP/1.1\r\nHost:\ localhost
+    option      httpchk
+    http-check  send meth GET uri /health
     http-check  expect status 200
 
     # Servers are referenced by private IP (stable within VPC)
