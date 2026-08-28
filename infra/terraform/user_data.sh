@@ -27,8 +27,27 @@ cd /tmp
 wget -q "https://aws-codedeploy-${region}.s3.${region}.amazonaws.com/latest/codedeploy-agent.noarch.rpm"
 dnf install -y ./codedeploy-agent.noarch.rpm
 
-# The rpm installs a SysV init script — use service to start it
+# The CodeDeploy agent rpm uses SysV init — start it now
+# and create a systemd boot service to auto-start it on every reboot
 service codedeploy-agent start
+
+cat > /etc/systemd/system/codedeploy-agent-boot.service << 'CDSVC'
+[Unit]
+Description=Start CodeDeploy Agent on boot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'sleep 5 && service codedeploy-agent start'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+CDSVC
+
+systemctl daemon-reload
+systemctl enable codedeploy-agent-boot.service
 
 # ---------------------------------------------------------------
 # Create app user and directories
